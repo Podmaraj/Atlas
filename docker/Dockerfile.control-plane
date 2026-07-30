@@ -1,0 +1,17 @@
+FROM golang:1.24-alpine AS builder
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+RUN CGO_ENABLED=0 GOOS=linux go build -o /app/control-plane-bin ./apps/control-plane
+
+FROM alpine:latest
+RUN apk --no-cache add ca-certificates tzdata
+WORKDIR /app
+COPY --from=builder /app/control-plane-bin /app/control-plane
+EXPOSE 8081
+CMD ["/app/control-plane"]

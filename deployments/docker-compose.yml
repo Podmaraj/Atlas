@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: edgecore-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: edgecore
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: edgecore-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  control-plane:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.control-plane
+    container_name: edgecore-control-plane
+    ports:
+      - "8081:8081"
+    environment:
+      EDGECORE_ENV: production
+      EDGECORE_DATABASE_HOST: postgres
+      EDGECORE_DATABASE_PORT: 5432
+      EDGECORE_DATABASE_USER: postgres
+      EDGECORE_DATABASE_PASSWORD: postgrespassword
+      EDGECORE_DATABASE_DBNAME: edgecore
+      EDGECORE_REDIS_ADDR: redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  gateway-node-1:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gateway
+    container_name: edgecore-gateway-node-1
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    environment:
+      EDGECORE_ENV: production
+      EDGECORE_GATEWAY_NODE_ID: gateway-node-1
+      EDGECORE_GATEWAY_HTTP_PORT: 8080
+      EDGECORE_GATEWAY_METRICS_PORT: 9090
+      EDGECORE_REDIS_ADDR: redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  gateway-node-2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gateway
+    container_name: edgecore-gateway-node-2
+    ports:
+      - "8082:8080"
+      - "9091:9090"
+    environment:
+      EDGECORE_ENV: production
+      EDGECORE_GATEWAY_NODE_ID: gateway-node-2
+      EDGECORE_GATEWAY_HTTP_PORT: 8080
+      EDGECORE_GATEWAY_METRICS_PORT: 9090
+      EDGECORE_REDIS_ADDR: redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  dashboard:
+    build:
+      context: ../apps/dashboard
+      dockerfile: Dockerfile
+    container_name: edgecore-dashboard
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_CONTROL_PLANE_URL: http://localhost:8081
+    depends_on:
+      - control-plane
+
+volumes:
+  pgdata:
